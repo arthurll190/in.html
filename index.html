@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiro ao Alvo Arcade - Ranking Supabase</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body {
+      margin: 0;
+      background: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    h1 { margin: 0 0 6px; color: #38bdf8; text-align: center; }
+    .subtitulo { margin: 0 0 16px; color: #94a3b8; text-align: center; font-size: 14px; }
+    .controles {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    input {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #fff;
+      font-size: 15px;
+      outline: none;
+    }
+    input:focus { border-color: #38bdf8; }
+    button {
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    .hud {
+      display: flex;
+      gap: 20px;
+      background: #1e293b;
+      padding: 10px 24px;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      font-size: 16px;
+      border: 1px solid #334155;
+    }
+    .hud span strong { color: #38bdf8; }
+    #arena {
+      background: radial-gradient(circle, #1e293b 0%, #090d16 100%);
+      border: 2px solid #334155;
+      border-radius: 12px;
+      cursor: crosshair;
+      touch-action: manipulation;
+      max-width: 100%;
+    }
+    .ranking-box {
+      margin-top: 20px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px 24px;
+      width: 100%;
+      max-width: 600px;
+    }
+    .ranking-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ranking-header h2 { margin: 0; font-size: 18px; color: #f8fafc; }
+    .badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1px solid #334155;
+    }
+    ol { margin: 0; padding-left: 22px; }
+    li { padding: 5px 0; color: #e2e8f0; border-bottom: 1px solid #33415555; }
+    li:last-child { border-bottom: none; }
+    li strong { color: #fbbf24; }
+  </style>
+</head>
+<body>
+
+  <h1>🎯 Tiro ao Alvo Arcade</h1>
+  <p class="subtitulo">Acerte o centro para ganhar mais pontos em 30 segundos!</p>
+
+  <div class="controles">
+    <input type="text" id="nomeJogador" placeholder="Seu nome ou apelido" maxlength="20">
+    <button id="btnIniciar">Iniciar Partida</button>
+  </div>
+
+  <div class="hud">
+    <span>Tempo: <strong id="tempo">30</strong>s</span>
+    <span>Pontos: <strong id="pontos">0</strong></span>
+    <span>Combo: <strong id="combo">0</strong>x</span>
+  </div>
+
+  <canvas id="arena" width="600" height="380"></canvas>
+
+  <div class="ranking-box">
+    <div class="ranking-header">
+      <h2>🏆 Top 10 Ranking Global</h2>
+      <span class="badge" id="statusBanco">Conectando...</span>
+    </div>
+    <ol id="listaRanking"><li>Carregando pontuações...</li></ol>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    // =========================================================================
+    // SUBSTITUA PELAS CHAVES DO SEU PROJETO NO SUPABASE (Settings > API)
+    // =========================================================================
+    const SUPABASE_URL = "SUA_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "SUA_SUPABASE_ANON_KEY";
+    // =========================================================================
+
+    const supabaseAtivo =
+      SUPABASE_URL !== "SUA_SUPABASE_URL" &&
+      SUPABASE_ANON_KEY !== "SUA_SUPABASE_ANON_KEY";
+
+    const statusBadge = document.getElementById("statusBanco");
+    let supabase = null;
+
+    if (supabaseAtivo) {
+      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      statusBadge.textContent = "🟢 Online (Supabase)";
+    } else {
+      statusBadge.textContent = "🟡 Modo Local (Cole as chaves do Supabase)";
+    }
+
+    const canvas = document.getElementById("arena");
+    const ctx = canvas.getContext("2d");
+    const btnIniciar = document.getElementById("btnIniciar");
+    const inputNome = document.getElementById("nomeJogador");
+    const elTempo = document.getElementById("tempo");
+    const elPontos = document.getElementById("pontos");
+    const elCombo = document.getElementById("combo");
+    const listaRanking = document.getElementById("listaRanking");
+
+    let jogando = false;
+    let pontos = 0;
+    let combo = 0;
+    let tempoRestante = 30;
+    let alvos = [];
+    let textosFlutuantes = [];
+    let timerInterval = null;
+    let animFrame = null;
+
+    function criarAlvo() {
+      const raioMax = 38;
+      const margem = raioMax + 10;
+      const x = margem + Math.random() * (canvas.width - margem * 2);
+      const y = margem + Math.random() * (canvas.height - margem * 2);
+      alvos.push({
+        x,
+        y,
+        raio: raioMax,
+        minRaio: 10,
+        velocidade: 0.16 + Math.random() * 0.12
+      });
+    }
+
+    function desenharAlvo(alvo) {
+      const cores = ["#ef4444", "#ffffff", "#ef4444", "#fbbf24"];
+      const proporcoes = [1, 0.72, 0.45, 0.2];
+      proporcoes.forEach((p, i) => {
+        ctx.beginPath();
+        ctx.arc(alvo.x, alvo.y, alvo.raio * p, 0, Math.PI * 2);
+        ctx.fillStyle = cores[i];
+        ctx.fill();
+      });
+    }
+
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!jogando) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "18px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Digite seu nome e clique em 'Iniciar Partida'", canvas.width / 2, canvas.height / 2);
+        return;
+      }
+
+      while (alvos.length < 3) criarAlvo();
+
+      for (let i = alvos.length - 1; i >= 0; i--) {
+        const a = alvos[i];
+        a.raio -= a.velocidade;
+        if (a.raio <= a.minRaio) {
+          alvos.splice(i, 1);
+          combo = 0;
+          elCombo.textContent = combo;
+        } else {
+          desenharAlvo(a);
+        }
+      }
+
+      for (let i = textosFlutuantes.length - 1; i >= 0; i--) {
+        const t = textosFlutuantes[i];
+        ctx.fillStyle = `rgba(251, 191, 36, ${t.alpha})`;
+        ctx.font = "bold 16px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(t.texto, t.x, t.y);
+        t.y -= 1;
+        t.alpha -= 0.025;
+        if (t.alpha <= 0) textosFlutuantes.splice(i, 1);
+      }
+
+      animFrame = requestAnimationFrame(loop);
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!jogando) return;
+      const rect = canvas.getBoundingClientRect();
+      const escalaX = canvas.width / rect.width;
+      const escalaY = canvas.height / rect.height;
+      const clickX = (e.clientX - rect.left) * escalaX;
+      const clickY = (e.clientY - rect.top) * escalaY;
+
+      let acertou = false;
+
+      for (let i = alvos.length - 1; i >= 0; i--) {
+        const a = alvos[i];
+        const dist = Math.hypot(clickX - a.x, clickY - a.y);
+
+        if (dist <= a.raio) {
+          acertou = true;
+          combo++;
+          let ganho = 10;
+          if (dist <= a.raio * 0.25) ganho = 50;
+          else if (dist <= a.raio * 0.6) ganho = 25;
+
+          const totalGanho = ganho + Math.min(combo * 2, 20);
+          pontos += totalGanho;
+          elPontos.textContent = pontos;
+          elCombo.textContent = combo;
+
+          textosFlutuantes.push({ x: a.x, y: a.y, texto: `+${totalGanho}`, alpha: 1 });
+          alvos.splice(i, 1);
+          break;
+        }
+      }
+
+      if (!acertou) {
+        combo = 0;
+        elCombo.textContent = combo;
+      }
+    });
+
+    btnIniciar.addEventListener("click", () => {
+      const nome = inputNome.value.trim();
+      if (!nome) {
+        alert("Digite seu nome antes de iniciar!");
+        inputNome.focus();
+        return;
+      }
+
+      clearInterval(timerInterval);
+      cancelAnimationFrame(animFrame);
+
+      pontos = 0;
+      combo = 0;
+      tempoRestante = 30;
+      alvos = [];
+      textosFlutuantes = [];
+      jogando = true;
+
+      elPontos.textContent = pontos;
+      elCombo.textContent = combo;
+      elTempo.textContent = tempoRestante;
+      btnIniciar.disabled = true;
+      inputNome.disabled = true;
+
+      timerInterval = setInterval(() => {
+        tempoRestante--;
+        elTempo.textContent = tempoRestante;
+        if (tempoRestante <= 0) finalizarPartida();
+      }, 1000);
+
+      loop();
+    });
+
+    async function finalizarPartida() {
+      jogando = false;
+      clearInterval(timerInterval);
+      btnIniciar.disabled = false;
+      inputNome.disabled = false;
+
+      const nome = inputNome.value.trim();
+      alert(`Fim de jogo, ${nome}! Você fez ${pontos} pontos.`);
+
+      if (supabaseAtivo && supabase) {
+        const { error } = await supabase
+          .from("ranking_tiro")
+          .insert([{ nome: nome, pontos: Number(pontos) }]);
+
+        if (error) {
+          console.error("Erro ao salvar pontuação no Supabase:", error);
+          alert("Não foi possível salvar no ranking online. Verifique a tabela e as políticas no Supabase.");
+        } else {
+          await carregarRanking();
+        }
+      } else {
+        const local = JSON.parse(localStorage.getItem("rankingTiro") || "[]");
+        local.push({ nome, pontos });
+        localStorage.setItem("rankingTiro", JSON.stringify(local));
+        renderizarRanking(local.sort((a, b) => b.pontos - a.pontos).slice(0, 10));
+      }
+    }
+
+    function renderizarRanking(lista) {
+      listaRanking.innerHTML = "";
+      if (!lista || lista.length === 0) {
+        listaRanking.innerHTML = "<li>Nenhuma pontuação registrada ainda.</li>";
+        return;
+      }
+      lista.forEach((item, index) => {
+        const li = document.createElement("li");
+        const medalha = index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : "";
+        li.innerHTML = `${medalha}${item.nome} — <strong>${item.pontos} pts</strong>`;
+        listaRanking.appendChild(li);
+      });
+    }
+
+    async function carregarRanking() {
+      if (supabaseAtivo && supabase) {
+        const { data, error } = await supabase
+          .from("ranking_tiro")
+          .select("nome, pontos")
+          .order("pontos", { ascending: false })
+          .limit(10);
+
+        if (error) {
+          console.error("Erro ao ler ranking do Supabase:", error);
+          statusBadge.textContent = "🔴 Erro ao conectar no Supabase";
+          listaRanking.innerHTML = "<li>Erro ao carregar o ranking.</li>";
+          return;
+        }
+
+        statusBadge.textContent = "🟢 Online (Supabase)";
+        renderizarRanking(data);
+      } else {
+        const local = JSON.parse(localStorage.getItem("rankingTiro") || "[]");
+        renderizarRanking(local.sort((a, b) => b.pontos - a.pontos).slice(0, 10));
+      }
+    }
+
+    if (supabaseAtivo && supabase) {
+      supabase
+        .channel("ranking-ao-vivo")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "ranking_tiro" },
+          () => carregarRanking()
+        )
+        .subscribe();
+    }
+
+    carregarRanking();
+    loop();
+  </script>
+</body>
+</html>
