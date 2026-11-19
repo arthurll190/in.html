@@ -131,8 +131,8 @@
     // =========================================================================
     // SUBSTITUA PELAS CHAVES DO SEU PROJETO NO SUPABASE (Settings > API)
     // =========================================================================
-    const SUPABASE_URL = "SUA_SUPABASE_URL";
-    const SUPABASE_ANON_KEY = "SUA_SUPABASE_ANON_KEY";
+    const SUPABASE_URL = "https://vagzvecyiubjarysktgh.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_r67n53qvjghofxTvkQJAlA_u4ppW5yE";
     // =========================================================================
 
     const supabaseAtivo =
@@ -339,7 +339,13 @@
       lista.forEach((item, index) => {
         const li = document.createElement("li");
         const medalha = index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : "";
-        li.innerHTML = `${medalha}${item.nome} — <strong>${item.pontos} pts</strong>`;
+const nome = document.createTextNode(`${medalha}${item.nome} — `);
+
+const pontos = document.createElement("strong");
+pontos.textContent = `${item.pontos} pts`;
+
+li.appendChild(nome);
+li.appendChild(pontos);
         listaRanking.appendChild(li);
       });
     }
